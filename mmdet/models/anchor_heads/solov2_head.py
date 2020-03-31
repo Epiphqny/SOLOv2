@@ -85,8 +85,6 @@ class SOLOV2Head(nn.Module):
                     norm_cfg=norm_cfg,
                     bias=norm_cfg is None))
 
-            chn = self.in_channels if i == 0 else self.seg_feat_channels
-            
             self.kernel_convs.append(
                 ConvModule(
                     chn,
@@ -96,7 +94,7 @@ class SOLOV2Head(nn.Module):
                     padding=1,
                     norm_cfg=norm_cfg,
                     bias=norm_cfg is None))
-            
+            chn = self.in_channels if i == 0 else self.seg_feat_channels 
             self.cate_convs.append(
                 ConvModule(
                     chn,
@@ -106,9 +104,12 @@ class SOLOV2Head(nn.Module):
                     padding=1,
                     norm_cfg=norm_cfg,
                     bias=norm_cfg is None))
+        self.solo_kernel = nn.Conv2d(
+            self.seg_feat_channels, self.seg_feat_channels, 1, padding=0)
         self.solo_cate = nn.Conv2d(
             self.seg_feat_channels, self.cate_out_channels, 3, padding=1)
-        self.solo_mask = ConvModule(self.seg_feat_channels, self.seg_feat_channels, 1, padding=0,norm_cfg=norm_cfg, bias=norm_cfg is None)
+        self.solo_mask = ConvModule(
+            self.seg_feat_channels, self.seg_feat_channels, 1, padding=0,norm_cfg=norm_cfg, bias=norm_cfg is None)
  
     def init_weights(self):
         for m in self.feature_convs:
@@ -120,6 +121,7 @@ class SOLOV2Head(nn.Module):
         bias_ins = bias_init_with_prob(0.01)
         bias_cate = bias_init_with_prob(0.01)
         normal_init(self.solo_cate, std=0.01, bias=bias_cate)
+
     def forward(self, feats, eval=False):
         new_feats = self.split_feats(feats)
         featmap_sizes = [featmap.size()[-2:] for featmap in new_feats]
@@ -134,12 +136,14 @@ class SOLOV2Head(nn.Module):
         feature_pred = self.solo_mask(feature_pred)   
         feature_pred = feature_pred.view(-1, h, w).unsqueeze(0)
         ins_pred = []
+        
         for i in range(5):
             kernel = kernel_pred[i].permute(0,2,3,1).contiguous().view(-1,c).unsqueeze(-1).unsqueeze(-1)
             ins_i = F.conv2d(feature_pred, kernel, groups=N).view(N,self.seg_num_grids[i]**2, h,w)
             if eval:
                 ins_i=ins_i.sigmoid()
             ins_pred.append(ins_i)
+
         return ins_pred, cate_pred
 
     def split_feats(self, feats):
@@ -162,18 +166,21 @@ class SOLOV2Head(nn.Module):
         y = y.expand([feature_feat.shape[0], 1, -1, -1])
         x = x.expand([feature_feat.shape[0], 1, -1, -1])
         coord_feat = torch.cat([x, y], 1)
+        
         feature_feat = torch.cat([feature_feat, coord_feat], 1)
         for i, feature_layer in enumerate(self.feature_convs):
             feature_feat = feature_layer(feature_feat)
         
         feature_feat = F.interpolate(feature_feat, scale_factor=2, mode='bilinear')
-        
-        # kernel branch
+       
+        # kernel branch 
+        kernel_feat = torch.cat([kernel_feat, coord_feat], 1)
         for i, kernel_layer in enumerate(self.kernel_convs):
             if i == self.cate_down_pos:
                 seg_num_grid = self.seg_num_grids[idx]
                 kernel_feat = F.interpolate(kernel_feat, size=seg_num_grid, mode='bilinear')    
-            kernel_pred = kernel_layer(kernel_feat)
+            kernel_feat = kernel_layer(kernel_feat)
+        kernel_pred = self.solo_kernel(kernel_feat)
         
         # cate branch
         for i, cate_layer in enumerate(self.cate_convs):
@@ -206,7 +213,6 @@ class SOLOV2Head(nn.Module):
             gt_label_list,
             gt_mask_list,
             featmap_sizes=featmap_sizes)
-
         # ins
         ins_labels = [torch.cat([ins_labels_level_img[ins_ind_labels_level_img, ...]
                                  for ins_labels_level_img, ins_ind_labels_level_img in
@@ -227,7 +233,7 @@ class SOLOV2Head(nn.Module):
         flatten_ins_ind_labels = torch.cat(ins_ind_labels)
 
         num_ins = flatten_ins_ind_labels.int().sum()
-
+        
         # dice loss
         loss_ins = []
         for input, target in zip(ins_preds, ins_labels):
