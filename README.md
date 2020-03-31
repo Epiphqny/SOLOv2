@@ -3,7 +3,7 @@ The code is an unofficial pytorch implementation of [SOLOv2: Dynamic, Faster and
 
 
 ## Install
-Please check [SOLOV1](https://github.com/WXinlong/SOLO/blob/master/docs/INSTALL.md) for installation instructions.
+Please check [SOLOv1](https://github.com/WXinlong/SOLO/blob/master/docs/INSTALL.md) for installation instructions.
 
 ## Training
 Follows the same way as SOLOv1.
