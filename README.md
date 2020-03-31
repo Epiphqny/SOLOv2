@@ -8,10 +8,14 @@ Please check [SOLOV1](https://github.com/WXinlong/SOLO/blob/master/docs/INSTALL.
 ## Training
 Follows the same way as SOLOv1.
 
-single GPU: python tools/train.py configs/solov2/solov2_r101_3x.py
-
-multi GPU (for example 8): ./tools/dist_train.sh configs/solov2/solov2_r101_3x.py 8
-
+single GPU: 
+```
+python tools/train.py configs/solov2/solov2_r101_3x.py
+```
+multi GPU (for example 8): 
+```
+./tools/dist_train.sh configs/solov2/solov2_r101_3x.py 8
+```
 
 ## Results
 
