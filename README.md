@@ -17,6 +17,11 @@ multi GPU (for example 8):
 ./tools/dist_train.sh configs/solov2/solov2_r101_3x.py 8
 ```
 
-## Results
+## Results(Model is still in training, will update result once finished.)
+1 epoch AP:
 
-Model is still in training, will update result once finished.
+<img src="AP.jpg">
+
+## Visualization（1 epoch)
+
+<img src="solo.png" width="2000">
