@@ -24,4 +24,4 @@ multi GPU (for example 8):
 
 ## Visualization（1 epoch)
 
-<img src="solo.png" width="2000">
+<img src="solov2.png" width="2000">
