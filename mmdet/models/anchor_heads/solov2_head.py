@@ -129,6 +129,7 @@ class SOLOV2Head(nn.Module):
         feature_feat, kernel_pred, cate_pred = multi_apply(self.forward_single, new_feats, 
                                           list(range(len(self.seg_num_grids))),
                                           eval=eval, upsampled_size=upsampled_size)
+        feat_sizes = [feature.size()[-2:] for feature in feature_feat]
         N, c, h, w = feature_feat[0].shape
         for i in range(2,5):
             feature_feat[i] = F.interpolate(feature_feat[i], size=(h,w), mode='bilinear')
@@ -140,10 +141,11 @@ class SOLOV2Head(nn.Module):
         for i in range(5):
             kernel = kernel_pred[i].permute(0,2,3,1).contiguous().view(-1,c).unsqueeze(-1).unsqueeze(-1)
             ins_i = F.conv2d(feature_pred, kernel, groups=N).view(N,self.seg_num_grids[i]**2, h,w)
+            if not eval:
+                ins_i = F.interpolate(ins_i, size=feat_sizes[i], mode='bilinear')
             if eval:
                 ins_i=ins_i.sigmoid()
             ins_pred.append(ins_i)
-
         return ins_pred, cate_pred
 
     def split_feats(self, feats):
