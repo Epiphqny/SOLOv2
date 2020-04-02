@@ -18,7 +18,7 @@ multi GPU (for example 8):
 ```
 
 ## Results(Model is still in training, will update result once finished.)
-1 epoch AP:
+4 epoch AP: 0.263
 
 <img src="AP.jpg">
 
