@@ -73,17 +73,61 @@ class SOLOV2Head(nn.Module):
         self.feature_convs = nn.ModuleList()
         self.kernel_convs = nn.ModuleList()
         self.cate_convs = nn.ModuleList()
-        for i in range(self.stacked_convs):
-            chn = self.in_channels + 2 if i == 0 else self.seg_feat_channels
-            self.feature_convs.append(
-                ConvModule(
-                    chn,
+        
+        # mask feature     
+        for i in range(4):
+            convs_per_level = nn.Sequential()
+            if i == 0:
+                one_conv = ConvModule(
+                    self.in_channels,
                     self.seg_feat_channels,
                     3,
-                    stride=1,
                     padding=1,
-                    norm_cfg=norm_cfg,
-                    bias=norm_cfg is None))
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=norm_cfg is None)
+                convs_per_level.add_module('conv' + str(i), one_conv)
+                self.feature_convs.append(convs_per_level)
+                continue
+            for j in range(i):
+                if j == 0:
+                    if i==3:
+                        in_channel = self.in_channels+2
+                    else:
+                        in_channel = self.in_channels
+                    one_conv = ConvModule(
+                        in_channel,
+                        self.seg_feat_channels,
+                        3,
+                        padding=1,
+                        conv_cfg=self.conv_cfg,
+                        norm_cfg=self.norm_cfg,
+                        bias=norm_cfg is None)
+                    convs_per_level.add_module('conv' + str(j), one_conv)
+                    one_upsample = nn.Upsample(
+                        scale_factor=2, mode='bilinear', align_corners=False)
+                    convs_per_level.add_module(
+                        'upsample' + str(j), one_upsample)
+                    continue
+                one_conv = ConvModule(
+                    self.seg_feat_channels,
+                    self.seg_feat_channels,
+                    3,
+                    padding=1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    bias=norm_cfg is None)
+                convs_per_level.add_module('conv' + str(j), one_conv)
+                one_upsample = nn.Upsample(
+                    scale_factor=2,
+                    mode='bilinear',
+                    align_corners=False)
+                convs_per_level.add_module('upsample' + str(j), one_upsample)
+            self.feature_convs.append(convs_per_level)
+ 
+
+        for i in range(self.stacked_convs):
+            chn = self.in_channels + 2 if i == 0 else self.seg_feat_channels
 
             self.kernel_convs.append(
                 ConvModule(
@@ -109,32 +153,43 @@ class SOLOV2Head(nn.Module):
         self.solo_cate = nn.Conv2d(
             self.seg_feat_channels, self.cate_out_channels, 3, padding=1)
         self.solo_mask = ConvModule(
-            self.seg_feat_channels, self.seg_feat_channels, 1, padding=0,norm_cfg=norm_cfg, bias=norm_cfg is None)
+            self.seg_feat_channels, self.seg_feat_channels, 1, padding=0, norm_cfg=norm_cfg, bias=norm_cfg is None)
  
     def init_weights(self):
+        #TODO: init for feat_conv
         for m in self.feature_convs:
-            normal_init(m.conv, std=0.01)
+            s=len(m)
+            for i in range(s):
+                if i%2 == 0:
+                    normal_init(m[i].conv, std=0.01)
         for m in self.kernel_convs:
             normal_init(m.conv, std=0.01)
         for m in self.cate_convs:
             normal_init(m.conv, std=0.01)
-        bias_ins = bias_init_with_prob(0.01)
         bias_cate = bias_init_with_prob(0.01)
         normal_init(self.solo_cate, std=0.01, bias=bias_cate)
 
     def forward(self, feats, eval=False):
         new_feats = self.split_feats(feats)
         featmap_sizes = [featmap.size()[-2:] for featmap in new_feats]
-        upsampled_size = (featmap_sizes[0][0] * 2, featmap_sizes[0][1] * 2)
-        feature_feat, kernel_pred, cate_pred = multi_apply(self.forward_single, new_feats, 
+        upsampled_size = (feats[0].shape[-2], feats[0].shape[-3])
+        kernel_pred, cate_pred = multi_apply(self.forward_single, new_feats,
                                           list(range(len(self.seg_num_grids))),
-                                          eval=eval, upsampled_size=upsampled_size)
-        feat_sizes = [feature.size()[-2:] for feature in feature_feat]
-        N, c, h, w = feature_feat[0].shape
-        for i in range(2,5):
-            feature_feat[i] = F.interpolate(feature_feat[i], size=(h,w), mode='bilinear')
-        feature_pred = feature_feat[0]+feature_feat[1]+feature_feat[2]+feature_feat[3]+feature_feat[4]
-        feature_pred = self.solo_mask(feature_pred)   
+                                          eval=eval)
+        # add coord for p5
+        x_range = torch.linspace(-1, 1, feats[-2].shape[-1], device=feats[-2].device)
+        y_range = torch.linspace(-1, 1, feats[-2].shape[-2], device=feats[-2].device)
+        y, x = torch.meshgrid(y_range, x_range)
+        y = y.expand([feats[-2].shape[0], 1, -1, -1])
+        x = x.expand([feats[-2].shape[0], 1, -1, -1])
+        coord_feat = torch.cat([x, y], 1)
+        feature_add_all_level = self.feature_convs[0](feats[0]) 
+        for i in range(1,3):
+            feature_add_all_level = feature_add_all_level + self.feature_convs[i](feats[i])
+        feature_add_all_level = feature_add_all_level + self.feature_convs[3](torch.cat([feats[3],coord_feat],1))
+        
+        feature_pred = self.solo_mask(feature_add_all_level)   
+        N, c, h, w = feature_pred.shape
         feature_pred = feature_pred.view(-1, h, w).unsqueeze(0)
         ins_pred = []
         
@@ -142,7 +197,7 @@ class SOLOV2Head(nn.Module):
             kernel = kernel_pred[i].permute(0,2,3,1).contiguous().view(-1,c).unsqueeze(-1).unsqueeze(-1)
             ins_i = F.conv2d(feature_pred, kernel, groups=N).view(N,self.seg_num_grids[i]**2, h,w)
             if not eval:
-                ins_i = F.interpolate(ins_i, size=feat_sizes[i], mode='bilinear')
+                ins_i = F.interpolate(ins_i, size=(featmap_sizes[i][0]*2,featmap_sizes[i][1]*2), mode='bilinear')
             if eval:
                 ins_i=ins_i.sigmoid()
             ins_pred.append(ins_i)
@@ -155,27 +210,19 @@ class SOLOV2Head(nn.Module):
                 feats[3], 
                 F.interpolate(feats[4], size=feats[3].shape[-2:], mode='bilinear'))
 
-    def forward_single(self, x, idx, eval=False, upsampled_size=None):
-        feature_feat = x
+    def forward_single(self, x, idx, eval=False):
         kernel_feat = x
         cate_feat = x
-        # feature branch
+        # kernel branch
         # concat coord
-
-        x_range = torch.linspace(-1, 1, feature_feat.shape[-1], device=feature_feat.device)
-        y_range = torch.linspace(-1, 1, feature_feat.shape[-2], device=feature_feat.device)
+ 
+        x_range = torch.linspace(-1, 1, kernel_feat.shape[-1], device=kernel_feat.device)
+        y_range = torch.linspace(-1, 1, kernel_feat.shape[-2], device=kernel_feat.device)
         y, x = torch.meshgrid(y_range, x_range)
-        y = y.expand([feature_feat.shape[0], 1, -1, -1])
-        x = x.expand([feature_feat.shape[0], 1, -1, -1])
+        y = y.expand([kernel_feat.shape[0], 1, -1, -1])
+        x = x.expand([kernel_feat.shape[0], 1, -1, -1])
         coord_feat = torch.cat([x, y], 1)
         
-        feature_feat = torch.cat([feature_feat, coord_feat], 1)
-        for i, feature_layer in enumerate(self.feature_convs):
-            feature_feat = feature_layer(feature_feat)
-        
-        feature_feat = F.interpolate(feature_feat, scale_factor=2, mode='bilinear')
-       
-        # kernel branch 
         kernel_feat = torch.cat([kernel_feat, coord_feat], 1)
         for i, kernel_layer in enumerate(self.kernel_convs):
             if i == self.cate_down_pos:
@@ -195,8 +242,7 @@ class SOLOV2Head(nn.Module):
         
         if eval:
            cate_pred = points_nms(cate_pred.sigmoid(), kernel=2).permute(0, 2, 3, 1)
- 
-        return feature_feat, kernel_pred, cate_pred
+        return kernel_pred, cate_pred
 
     def loss(self,
              ins_preds,
