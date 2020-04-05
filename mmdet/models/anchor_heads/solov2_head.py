@@ -171,7 +171,6 @@ class SOLOV2Head(nn.Module):
 
     def forward(self, feats, eval=False):
         new_feats = self.split_feats(feats)
-        featmap_sizes = [featmap.size()[-2:] for featmap in new_feats]
         upsampled_size = (feats[0].shape[-2], feats[0].shape[-3])
         kernel_pred, cate_pred = multi_apply(self.forward_single, new_feats,
                                           list(range(len(self.seg_num_grids))),
@@ -196,8 +195,6 @@ class SOLOV2Head(nn.Module):
         for i in range(5):
             kernel = kernel_pred[i].permute(0,2,3,1).contiguous().view(-1,c).unsqueeze(-1).unsqueeze(-1)
             ins_i = F.conv2d(feature_pred, kernel, groups=N).view(N,self.seg_num_grids[i]**2, h,w)
-            if not eval:
-                ins_i = F.interpolate(ins_i, size=(featmap_sizes[i][0]*2,featmap_sizes[i][1]*2), mode='bilinear')
             if eval:
                 ins_i=ins_i.sigmoid()
             ins_pred.append(ins_i)
@@ -318,7 +315,6 @@ class SOLOV2Head(nn.Module):
                                featmap_sizes=None):
 
         device = gt_labels_raw[0].device
-
         # ins
         gt_areas = torch.sqrt((gt_bboxes_raw[:, 2] - gt_bboxes_raw[:, 0]) * (
                 gt_bboxes_raw[:, 3] - gt_bboxes_raw[:, 1]))
@@ -326,8 +322,9 @@ class SOLOV2Head(nn.Module):
         ins_label_list = []
         cate_label_list = []
         ins_ind_label_list = []
-        for (lower_bound, upper_bound), stride, featmap_size, num_grid \
-                in zip(self.scale_ranges, self.strides, featmap_sizes, self.seg_num_grids):
+        stride = self.strides[0]
+        for (lower_bound, upper_bound), featmap_size, num_grid \
+                in zip(self.scale_ranges, featmap_sizes, self.seg_num_grids):
 
             ins_label = torch.zeros([num_grid ** 2, featmap_size[0], featmap_size[1]], dtype=torch.uint8, device=device)
             cate_label = torch.zeros([num_grid, num_grid], dtype=torch.int64, device=device)
