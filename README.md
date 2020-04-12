@@ -19,7 +19,7 @@ multi GPU (for example 8):
 ## Weights
 Trained model can be download in [Google drive](https://drive.google.com/file/d/1v8SCK5LAlbE6X4dnpl2DOaWfakwFzENI/view?usp=sharing)
 ## Results
-After training 36 epochs(3x) on the coco dataset using the resnet-101 backbone, the mAP is 39.3 on COCO test-dev2017 dataset. In the original paper, the model achieves 39.7 after 72 epochs(6x).
+After training 36 epochs(3x) on the coco dataset using the resnet-101 backbone, the mAP is 39.5 on COCO test-dev2017 dataset. In the original paper, the model achieves 39.7 after 72 epochs(6x).
 
 <img src="AP.jpg">
 
