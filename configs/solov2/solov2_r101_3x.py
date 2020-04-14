@@ -19,7 +19,7 @@ model = dict(
         type='SOLOV2Head',
         num_classes=81,
         in_channels=256,
-        stacked_convs=7,
+        stacked_convs=4,
         seg_feat_channels=256,
         strides=[8, 8, 16, 32, 32],
         scale_ranges=((1, 96), (48, 192), (96, 384), (192, 768), (384, 2048)),
@@ -83,8 +83,8 @@ test_pipeline = [
         ])
 ]
 data = dict(
-    imgs_per_gpu=1,
-    workers_per_gpu=1,
+    imgs_per_gpu=4,
+    workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
